@@ -1,0 +1,9 @@
+on a use connects to the server
+add them to chat room
+
+on a user disconnects from the server
+remove them from the chat room
+
+on a user sends a message to a chat room
+send the message to all the users in the chat room
+
