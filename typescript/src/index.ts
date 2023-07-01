@@ -6,29 +6,48 @@ const server = fastify();
 server.register(ws);
 
 const clients = new Set<WebSocket>();
-const chatRooms = new Map<string, Set<WebSocket>>();
+const channels = new Map<string, Set<WebSocket>>();
 
 server.get("/chat", { websocket: true }, async (connection, request) => {
   clients.add(connection.socket);
   connection.socket.on("message", (message) => {
     const { type, data } = JSON.parse(message.toString());
     if (type === "join") {
-      const { room } = data;
-      if (!chatRooms.has(room)) {
-        chatRooms.set(room, new Set<WebSocket>());
+      const { channelId } = data;
+      if (!channels.has(channelId)) {
+        channels.set(channelId, new Set<WebSocket>());
       }
-      chatRooms.get(room)!.add(connection.socket);
-    }
-    if (type === "send") {
-      const { room, message } = data;
-
-      for (const client of chatRooms.get(room)) {
-        client.send(message);
+      channels.get(channelId)!.add(connection.socket);
+    } else if (type === "send") {
+      const { channelId, message } = data;
+      const channel = channels.get(channelId);
+      if (!channel) {
+        connection.socket.send(
+          {
+            type: "error",
+            message: "Channel not found!",
+          }.toString()
+        );
+      } else
+        for (const client of channel) {
+          client.send(message);
+        }
+    } else if (type === "leave") {
+      const { channelId } = data;
+      const channel = channels.get(channelId);
+      if (!channel) {
+        connection.socket.send(
+          {
+            type: "error",
+            message: "Channel not found!",
+          }.toString()
+        );
+      } else {
+        channel.delete(connection.socket);
+        if (channel.size === 0) {
+          channels.delete(channelId);
+        }
       }
-    }
-    if (type === "leave") {
-      const { room } = data;
-      chatRooms.get(room)!.delete(connection.socket);
     }
   });
 
