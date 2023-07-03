@@ -45,14 +45,7 @@ server.get("/chat", { websocket: true }, async (connection, request) => {
   connection.socket.on("message", (message) => {
     const { type, payload }: SocketMessage = JSON.parse(message.toString());
     if (type === "joinChannel") {
-      const messages = chat.handleJoinChannel(user.id, payload.channelId);
-      const socket = userSockets.get(user.id);
-      if (!socket) {
-        return connection.socket.send(
-          JSON.stringify({ type: "error", message: "User not found" })
-        );
-      }
-      socket.send(JSON.stringify({ type: "joined", payload: { messages } }));
+      chat.handleJoinChannel(user.id, payload.channelId);
     } else if (type === "sendMessage") {
       chat.handleSendMessage(
         user.id,
