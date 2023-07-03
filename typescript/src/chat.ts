@@ -50,7 +50,8 @@ export class Chat {
     userId: number,
     channelId: number,
     message: string,
-    sendMessage: (userId: number, channelId: number, message: string) => void
+    sentAt: Date,
+    sendMessage: (receiverId: number, message: Message) => void
   ) {
     const user = this.users.get(userId);
     if (!user) {
@@ -60,9 +61,15 @@ export class Chat {
     if (!channel) {
       throw new Error("Channel not found");
     }
-    channel.saveMessage(new Message(userId, message, channelId));
+    const messageObj = new Message({
+      ownerId: userId,
+      content: message,
+      channelId,
+      sentAt,
+    });
+    channel.saveMessage(messageObj);
     for (const member of channel.getMembers()) {
-      sendMessage(member.id, channelId, message);
+      sendMessage(member.id, messageObj);
     }
   }
 
@@ -111,11 +118,24 @@ class Message {
   ownerId: number;
   content: string;
   channelId: number;
-  constructor(ownerId: number, content: string, channelId: number) {
+  sentAt: Date;
+
+  constructor({
+    ownerId,
+    content,
+    channelId,
+    sentAt,
+  }: {
+    ownerId: number;
+    content: string;
+    channelId: number;
+    sentAt: Date;
+  }) {
     this.id = Message.idCounter++;
     this.ownerId = ownerId;
     this.content = content;
     this.channelId = channelId;
+    this.sentAt = sentAt;
   }
 }
 
