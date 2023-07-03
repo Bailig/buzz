@@ -54,7 +54,7 @@ function connect(url: string) {
 }
 
 function run() {
-  const [url = "ws://0.0.0.0:8080/ws"] = process.argv.slice(2);
+  const [url = "ws://localhost:8080/chat"] = process.argv.slice(2);
   connect(url);
 }
 
