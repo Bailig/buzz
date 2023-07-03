@@ -1,43 +1,170 @@
-interface Chat {
-  join(user: User): this;
-  send(message: string): this;
-}
-
-interface User {
+export class Chat {
+  private static idCounter = 0;
   id: number;
-  send(message: string): void;
-}
+  private channels = new Map<number, Channel>();
+  private users = new Map<number, User>();
 
-export class ChatImpl implements Chat {
-  private users: User[] = [];
-  constructor() {}
-  join(user: User): this {
-    this.users.push(user);
-    return this;
+  constructor() {
+    this.id = Chat.idCounter++;
   }
-  send(message: string): this {
-    for (const user of this.users) {
-      user.send(message);
+
+  addUser(user: User) {
+    this.users.set(user.id, user);
+  }
+
+  removeUser(userId: number) {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error("User not found");
     }
-    return this;
+    for (const channelId of user.getChannelIds()) {
+      const channel = this.channels.get(channelId);
+      if (!channel) {
+        throw new Error("Channel not found");
+      }
+      channel.removeMember(user);
+    }
+    this.users.delete(user.id);
+    user.clear();
+  }
+
+  private getOrCreateChannel(channelId: number) {
+    if (!this.channels.has(channelId)) {
+      this.channels.set(channelId, new Channel());
+    }
+    return this.channels.get(channelId)!;
+  }
+
+  handleJoinChannel(userId: number, channelId: number) {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    const channel = this.getOrCreateChannel(channelId);
+    channel.addMember(user);
+    user.joinChannel(channelId);
+    return channel.getMessages();
+  }
+
+  handleSendMessage(
+    userId: number,
+    channelId: number,
+    message: string,
+    sendMessage: (userId: number, channelId: number, message: string) => void
+  ) {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    const channel = this.channels.get(channelId);
+    if (!channel) {
+      throw new Error("Channel not found");
+    }
+    channel.saveMessage(new Message(userId, message, channelId));
+    for (const member of channel.getMembers()) {
+      sendMessage(member.id, channelId, message);
+    }
+  }
+
+  handleLeaveChannel(userId: number, channelId: number) {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    const channel = this.channels.get(channelId);
+    if (!channel) {
+      throw new Error("Channel not found");
+    }
+    channel.removeMember(user);
+    user.leaveChannel(channelId);
   }
 }
 
-export class UserImpl implements User {
-  private static count = 0;
-  private id: number;
-  private name: string;
-  constructor(name: string) {
-    this.id = UserImpl.count++;
-    this.name = name;
+export class User {
+  private static idCounter = 0;
+  id: number;
+  private channelIds = new Set<number>();
+  constructor() {
+    this.id = User.idCounter++;
   }
-  send(message: string): void {
-    console.log(`user${this.id}: ${message}`);
+
+  getChannelIds() {
+    return this.channelIds;
+  }
+
+  joinChannel(channelId: number) {
+    this.channelIds.add(channelId);
+  }
+
+  leaveChannel(channelId: number) {
+    this.channelIds.delete(channelId);
+  }
+
+  clear() {
+    this.channelIds.clear();
   }
 }
 
-const chat = new ChatImpl();
-const user1 = {
-  id: 1,
-  send: (message: string) => console.log(`user1: ${message}`),
-};
+class Message {
+  private static idCounter = 0;
+  id: number;
+  ownerId: number;
+  content: string;
+  channelId: number;
+  constructor(ownerId: number, content: string, channelId: number) {
+    this.id = Message.idCounter++;
+    this.ownerId = ownerId;
+    this.content = content;
+    this.channelId = channelId;
+  }
+}
+
+class Channel {
+  private static idCounter = 0;
+  id: number;
+  name = "Channel";
+  private members = new Map<number, User>();
+  private messages = new Map<number, Message>();
+  private messageOrder = new Array<number>();
+
+  constructor(name?: string) {
+    this.id = Channel.idCounter++;
+    if (name) {
+      this.name = name;
+    }
+  }
+
+  addMember(user: User) {
+    this.members.set(user.id, user);
+  }
+
+  removeMember(user: User) {
+    this.members.delete(user.id);
+    if (this.members.size === 0) {
+      this.clear();
+    }
+  }
+
+  getMessages() {
+    return this.messageOrder.map((id) => this.messages.get(id));
+  }
+
+  saveMessage(message: Message) {
+    this.messages.set(message.id, message);
+    this.messageOrder.push(message.id);
+  }
+
+  getMembers() {
+    return Array.from(this.members.values());
+  }
+
+  getMemberCount() {
+    return this.members.size;
+  }
+
+  private clear() {
+    this.members.clear();
+    this.messages.clear();
+    this.messageOrder = [];
+  }
+}
