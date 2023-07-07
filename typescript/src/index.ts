@@ -23,6 +23,15 @@ server.get("/chat", { websocket: true }, async (connection) => {
       const { type, payload }: InputMessage = JSON.parse(message.toString());
       if (type === "joinChannel") {
         chat.handleJoinChannel(user.id, payload.channelId);
+        connection.socket.send(
+          JSON.stringify({
+            type: "joinChannelSuccess",
+            payload: {
+              userId: user.id,
+              channelId: payload.channelId,
+            },
+          } satisfies OutputMessage)
+        );
       } else if (type === "sendMessage") {
         chat.handleSendMessage(
           user.id,
@@ -52,8 +61,8 @@ server.get("/chat", { websocket: true }, async (connection) => {
       connection.socket.send(
         JSON.stringify({
           type: "error",
-          payload: e,
-        })
+          payload: JSON.stringify(e),
+        } satisfies OutputMessage)
       );
     }
   });

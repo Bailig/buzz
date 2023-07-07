@@ -43,7 +43,6 @@ export class Chat {
     const channel = this.getOrCreateChannel(channelId);
     channel.addMember(user);
     user.joinChannel(channelId);
-    return channel.getMessages();
   }
 
   handleSendMessage(

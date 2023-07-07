@@ -1,9 +1,8 @@
 import WebSocket from "ws";
 import { InputMessage, OutputMessage } from "../src/schema";
 
-let channelId = -1;
 function joinChannel(socket: WebSocket) {
-  channelId++;
+  const channelId = 1;
   const join: Extract<InputMessage, { type: "joinChannel" }> = {
     type: "joinChannel",
     payload: {
@@ -37,13 +36,18 @@ function connect(url: string) {
     sendMessage(socket, channelId);
   });
 
+  let myId: number | undefined = undefined;
   socket.on("message", (message) => {
     const { type, payload }: OutputMessage = JSON.parse(message.toString());
     if (type === "error") {
       throw new Error(payload);
     }
 
-    if (type === "message") {
+    if (type === "joinChannelSuccess") {
+      myId = payload.userId;
+    }
+
+    if (type === "message" && myId === payload.ownerId) {
       const now = new Date();
       const then = new Date(payload.sentAt);
       const diff = now.getTime() - then.getTime();
@@ -55,7 +59,12 @@ function connect(url: string) {
 
 function run() {
   const [url = "ws://localhost:8080/chat"] = process.argv.slice(2);
+  console.log(`Start connecting ${url}`);
   connect(url);
 }
 
-run();
+try {
+  run();
+} catch (e) {
+  console.error(e);
+}
