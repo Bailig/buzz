@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import { InputMessage, OutputMessage } from "../src/schema";
+import fs from "node:fs";
 
 // create and join 20 channels
 const CHANNEL_COUNT = 20;
@@ -34,6 +35,33 @@ function sendMessageToAllChannels(socket: WebSocket) {
   }
 }
 
+class DiffSaver {
+  private diffs: number[] = [];
+  private lastPushTime = Date.now();
+  private timer: NodeJS.Timeout | undefined = undefined;
+
+  push(diffMs: number) {
+    this.diffs.push(diffMs);
+    this.lastPushTime = Date.now();
+
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if (Date.now() - this.lastPushTime > 10_000) {
+        this.save();
+      }
+    }, 10_000);
+  }
+
+  private save() {
+    const csv = "diffs\n" + this.diffs.join("\n");
+    const filename = `./data/result-${new Date().toISOString()}.csv`;
+    console.log(`Saving to ${filename}`);
+    fs.writeFileSync(filename, csv);
+    process.exit(0);
+  }
+}
+
+const diffSaver = new DiffSaver();
 let totalJoinedClientCount = 0;
 function connect(url: string, clientCount: number) {
   const socket = new WebSocket(url);
@@ -85,6 +113,7 @@ function connect(url: string, clientCount: number) {
           "My ID is not set. This is a bug. You should only receive messages after joining a channel."
         );
       }
+      // only care about messages sent by me
       if (typeof myId === "number" && myId === payload.ownerId) {
         const now = process.hrtime.bigint();
         const then = BigInt(payload.sentAt);
@@ -93,7 +122,7 @@ function connect(url: string, clientCount: number) {
           throw new Error("Time difference is too large!");
         }
         const diffMs = Number(diffNs) / 1_000_000;
-        console.log(`Round trip time: ${diffMs}ms`);
+        diffSaver.push(diffMs);
       }
     }
   });
@@ -114,9 +143,4 @@ function run() {
   }
 }
 
-try {
-  run();
-} catch (e) {
-  console.error(e);
-  process.exit(1);
-}
+run();
