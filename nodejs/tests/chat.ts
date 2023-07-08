@@ -1,42 +1,45 @@
 import WebSocket from "ws";
 import { InputMessage, OutputMessage } from "../src/schema";
 
-function joinChannel(socket: WebSocket) {
-  const channelId = 1;
-  const join: Extract<InputMessage, { type: "joinChannel" }> = {
-    type: "joinChannel",
-    payload: {
-      channelId,
-      sentAt: new Date().getTime(),
-    },
-  };
-  socket.send(JSON.stringify(join));
-  return channelId;
+// create and join 20 channels
+const CHANNEL_COUNT = 20;
+
+function joinAllChannels(socket: WebSocket) {
+  for (let channelId = 0; channelId < CHANNEL_COUNT; channelId++) {
+    const joinData: Extract<InputMessage, { type: "joinChannel" }> = {
+      type: "joinChannel",
+      payload: {
+        channelId,
+        sentAt: process.hrtime.bigint().toString(),
+      },
+    };
+    socket.send(JSON.stringify(joinData));
+  }
 }
 
-function sendMessage(socket: WebSocket, channelId: number) {
+function sendMessageToAllChannels(socket: WebSocket) {
   const messageContent = "hello world";
-  const message: Extract<InputMessage, { type: "sendMessage" }> = {
-    type: "sendMessage",
-    payload: {
-      channelId,
-      messageContent,
-      sentAt: new Date().getTime(),
-    },
-  };
-
-  socket.send(JSON.stringify(message));
+  for (let channelId = 0; channelId < CHANNEL_COUNT; channelId++) {
+    const message: Extract<InputMessage, { type: "sendMessage" }> = {
+      type: "sendMessage",
+      payload: {
+        channelId,
+        messageContent,
+        sentAt: process.hrtime.bigint().toString(),
+      },
+    };
+    socket.send(JSON.stringify(message));
+  }
 }
 
 function connect(url: string) {
   const socket = new WebSocket(url);
 
   socket.on("open", () => {
-    const channelId = joinChannel(socket);
-    sendMessage(socket, channelId);
+    joinAllChannels(socket);
   });
 
-  let myId: number | undefined = undefined;
+  const channelHandler = new ChannelHandler();
   socket.on("message", (message) => {
     const { type, payload }: OutputMessage = JSON.parse(message.toString());
     if (type === "error") {
@@ -44,27 +47,81 @@ function connect(url: string) {
     }
 
     if (type === "joinChannelSuccess") {
-      myId = payload.userId;
+      channelHandler.handleJoinChannelSuccess(payload, () =>
+        sendMessageToAllChannels(socket)
+      );
+      return;
     }
 
-    if (type === "message" && myId === payload.ownerId) {
-      const now = new Date();
-      const then = new Date(payload.sentAt);
-      const diff = now.getTime() - then.getTime();
-      console.log(`Roundtrip time: ${diff}ms`);
+    if (type === "message") {
+      if (channelHandler.getMyId() === payload.ownerId) {
+        const now = process.hrtime.bigint();
+        const then = BigInt(payload.sentAt);
+        const diffNs = now - then;
+        if (diffNs > Number.MAX_SAFE_INTEGER) {
+          throw new Error("Time difference is too large!");
+        }
+        const diffMs = Number(diffNs) / 1_000_000;
+        console.log(`Round trip time: ${diffMs}ms`);
+      }
     }
-    socket.close();
   });
 }
 
+class ChannelHandler {
+  private myId: number | undefined = undefined;
+  private channelIds: number[] = [];
+  private startedSendingMessages = false;
+
+  constructor() {}
+
+  getMyId() {
+    if (this.myId === undefined) {
+      throw new Error("My ID is not set yet!");
+    }
+    return this.myId;
+  }
+
+  handleJoinChannelSuccess(
+    payload: Extract<OutputMessage, { type: "joinChannelSuccess" }>["payload"],
+    startSendingMessages: () => void
+  ) {
+    if (typeof this.myId === "number" && this.myId !== payload.userId) {
+      throw new Error("My ID changed. This is a bug.");
+    }
+    if (this.channelIds.includes(payload.channelId)) {
+      throw new Error("Joined the same channel twice! This is a bug.");
+    }
+    this.myId = payload.userId;
+    this.channelIds.push(payload.channelId);
+    if (this.channelIds.length < CHANNEL_COUNT) {
+      return;
+    }
+    if (this.channelIds.length > CHANNEL_COUNT) {
+      throw new Error("Joined too many channels! This is a bug.");
+    }
+    if (this.startedSendingMessages) {
+      throw new Error(
+        "Already started sending messages! This is a bug. This should only be called once."
+      );
+    }
+    this.startedSendingMessages = true;
+    startSendingMessages();
+  }
+}
+
 function run() {
-  const [url = "ws://localhost:8080/chat"] = process.argv.slice(2);
-  console.log(`Start connecting ${url}`);
-  connect(url);
+  const [clientCount = "1", url = "ws://localhost:8080/chat"] =
+    process.argv.slice(2);
+  console.log(`Connecting ${clientCount} clients to ${url}`);
+  for (let i = 0; i < parseInt(clientCount); i++) {
+    connect(url);
+  }
 }
 
 try {
   run();
 } catch (e) {
   console.error(e);
+  process.exit(1);
 }

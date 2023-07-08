@@ -49,7 +49,7 @@ export class Chat {
     userId: number,
     channelId: number,
     message: string,
-    sentAt: Date,
+    sentAt: string,
     sendMessage: (receiverId: number, message: Message) => void
   ) {
     const user = this.users.get(userId);
@@ -117,7 +117,7 @@ class Message {
   ownerId: number;
   content: string;
   channelId: number;
-  sentAt: Date;
+  sentAt: string;
 
   constructor({
     ownerId,
@@ -128,7 +128,7 @@ class Message {
     ownerId: number;
     content: string;
     channelId: number;
-    sentAt: Date;
+    sentAt: string;
   }) {
     this.id = Message.idCounter++;
     this.ownerId = ownerId;

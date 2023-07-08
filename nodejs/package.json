@@ -1,5 +1,5 @@
 {
-	"name": "@buzz/typescript",
+	"name": "@buzz/nodejs",
 	"type": "module",
 	"scripts": {
 		"build": "tsc",

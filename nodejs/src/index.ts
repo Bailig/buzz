@@ -37,7 +37,7 @@ server.get("/chat", { websocket: true }, async (connection) => {
           user.id,
           payload.channelId,
           payload.messageContent,
-          new Date(payload.sentAt),
+          payload.sentAt,
           (receiverId, message) => {
             const socket = userSockets.get(receiverId);
             if (!socket) {
@@ -46,10 +46,7 @@ server.get("/chat", { websocket: true }, async (connection) => {
             socket.send(
               JSON.stringify({
                 type: "message",
-                payload: {
-                  ...message,
-                  sentAt: message.sentAt.toISOString(),
-                },
+                payload: message,
               } satisfies OutputMessage)
             );
           }
