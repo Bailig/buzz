@@ -4,13 +4,15 @@ import { InputMessage, OutputMessage } from "../src/schema";
 // create and join 20 channels
 const CHANNEL_COUNT = 20;
 
-function joinAllChannels(socket: WebSocket) {
+function joinAllChannels(socket: WebSocket, totalMemberCount: number) {
   for (let channelId = 0; channelId < CHANNEL_COUNT; channelId++) {
     const joinData: Extract<InputMessage, { type: "joinChannel" }> = {
       type: "joinChannel",
       payload: {
         channelId,
         sentAt: process.hrtime.bigint().toString(),
+        totalMemberCount,
+        totalChannelCount: CHANNEL_COUNT,
       },
     };
     socket.send(JSON.stringify(joinData));
@@ -32,14 +34,15 @@ function sendMessageToAllChannels(socket: WebSocket) {
   }
 }
 
-function connect(url: string) {
+function connect(url: string, clientCount: number) {
   const socket = new WebSocket(url);
 
   socket.on("open", () => {
-    joinAllChannels(socket);
+    joinAllChannels(socket, clientCount);
   });
 
-  const channelHandler = new ChannelHandler();
+  let myId: number | undefined = undefined;
+  let startedSending = false;
   socket.on("message", (message) => {
     const { type, payload }: OutputMessage = JSON.parse(message.toString());
     if (type === "error") {
@@ -47,14 +50,29 @@ function connect(url: string) {
     }
 
     if (type === "joinChannelSuccess") {
-      channelHandler.handleJoinChannelSuccess(payload, () =>
-        sendMessageToAllChannels(socket)
-      );
+      if (typeof myId === "number" && myId !== payload.userId) {
+        throw new Error("My ID changed. is a bug.");
+      }
+      myId = payload.userId;
+      return;
+    }
+
+    if (type === "everybodyJoinedAllChannels") {
+      if (startedSending) {
+        throw new Error("Received everybodyJoinedAllChannels twice.");
+      }
+      startedSending = true;
+      sendMessageToAllChannels(socket);
       return;
     }
 
     if (type === "message") {
-      if (channelHandler.getMyId() === payload.ownerId) {
+      if (myId === undefined) {
+        throw new Error(
+          "My ID is not set. This is a bug. You should only receive messages after joining a channel."
+        );
+      }
+      if (typeof myId === "number" && myId === payload.ownerId) {
         const now = process.hrtime.bigint();
         const then = BigInt(payload.sentAt);
         const diffNs = now - then;
@@ -68,54 +86,18 @@ function connect(url: string) {
   });
 }
 
-class ChannelHandler {
-  private myId: number | undefined = undefined;
-  private channelIds: number[] = [];
-  private startedSendingMessages = false;
-
-  constructor() {}
-
-  getMyId() {
-    if (this.myId === undefined) {
-      throw new Error("My ID is not set yet!");
-    }
-    return this.myId;
-  }
-
-  handleJoinChannelSuccess(
-    payload: Extract<OutputMessage, { type: "joinChannelSuccess" }>["payload"],
-    startSendingMessages: () => void
-  ) {
-    if (typeof this.myId === "number" && this.myId !== payload.userId) {
-      throw new Error("My ID changed. This is a bug.");
-    }
-    if (this.channelIds.includes(payload.channelId)) {
-      throw new Error("Joined the same channel twice! This is a bug.");
-    }
-    this.myId = payload.userId;
-    this.channelIds.push(payload.channelId);
-    if (this.channelIds.length < CHANNEL_COUNT) {
-      return;
-    }
-    if (this.channelIds.length > CHANNEL_COUNT) {
-      throw new Error("Joined too many channels! This is a bug.");
-    }
-    if (this.startedSendingMessages) {
-      throw new Error(
-        "Already started sending messages! This is a bug. This should only be called once."
-      );
-    }
-    this.startedSendingMessages = true;
-    startSendingMessages();
-  }
-}
-
 function run() {
   const [clientCount = "1", url = "ws://localhost:8080/chat"] =
     process.argv.slice(2);
   console.log(`Connecting ${clientCount} clients to ${url}`);
-  for (let i = 0; i < parseInt(clientCount); i++) {
-    connect(url);
+
+  const _clientCount = parseInt(clientCount);
+  if (isNaN(_clientCount)) {
+    throw new Error(`Invalid client count: ${clientCount}`);
+  }
+
+  for (let i = 0; i < _clientCount; i++) {
+    connect(url, _clientCount);
   }
 }
 
