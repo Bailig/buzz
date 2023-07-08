@@ -22,23 +22,41 @@ server.get("/chat", { websocket: true }, async (connection) => {
     try {
       const { type, payload }: InputMessage = JSON.parse(message.toString());
       if (type === "joinChannel") {
-        chat.handleJoinChannel(user.id, payload.channelId);
-        connection.socket.send(
-          JSON.stringify({
-            type: "joinChannelSuccess",
-            payload: {
-              userId: user.id,
-              channelId: payload.channelId,
-            },
-          } satisfies OutputMessage)
-        );
+        chat.handleJoinChannel({
+          userId: user.id,
+          channelId: payload.channelId,
+          totalMemberCount: payload.totalMemberCount,
+          totalChannelCount: payload.totalChannelCount,
+          onJoinChannelSuccess: () =>
+            connection.socket.send(
+              JSON.stringify({
+                type: "joinChannelSuccess",
+                payload: {
+                  userId: user.id,
+                  channelId: payload.channelId,
+                },
+              } satisfies OutputMessage)
+            ),
+          onAllMembersJoinedAllChannels: (recieverId) => {
+            const socket = userSockets.get(recieverId);
+            if (!socket) {
+              throw new Error("User not found");
+            }
+            socket.send(
+              JSON.stringify({
+                type: "everybodyJoinedAllChannels",
+                payload: undefined,
+              } satisfies OutputMessage)
+            );
+          },
+        });
       } else if (type === "sendMessage") {
-        chat.handleSendMessage(
-          user.id,
-          payload.channelId,
-          payload.messageContent,
-          payload.sentAt,
-          (receiverId, message) => {
+        chat.handleSendMessage({
+          userId: user.id,
+          channelId: payload.channelId,
+          message: payload.messageContent,
+          sentAt: payload.sentAt,
+          onSendMessage: (receiverId, message) => {
             const socket = userSockets.get(receiverId);
             if (!socket) {
               throw new Error("User not found");
@@ -49,8 +67,8 @@ server.get("/chat", { websocket: true }, async (connection) => {
                 payload: message,
               } satisfies OutputMessage)
             );
-          }
-        );
+          },
+        });
       } else if (type === "leaveChannel") {
         chat.handleLeaveChannel(user.id, payload.channelId);
       }

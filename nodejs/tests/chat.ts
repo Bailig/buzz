@@ -34,6 +34,7 @@ function sendMessageToAllChannels(socket: WebSocket) {
   }
 }
 
+let totalJoinedClientCount = 0;
 function connect(url: string, clientCount: number) {
   const socket = new WebSocket(url);
 
@@ -62,7 +63,19 @@ function connect(url: string, clientCount: number) {
         throw new Error("Received everybodyJoinedAllChannels twice.");
       }
       startedSending = true;
-      sendMessageToAllChannels(socket);
+      totalJoinedClientCount++;
+
+      // wait for everybody else to receive this message, and then start sending messages
+      setTimeout(() => {
+        if (totalJoinedClientCount !== clientCount) {
+          throw new Error(
+            `Expected ${clientCount} clients to join, but only ${totalJoinedClientCount} joined.`
+          );
+        }
+        for (let i = 0; i < 10; i++) {
+          sendMessageToAllChannels(socket);
+        }
+      }, 1000);
       return;
     }
 

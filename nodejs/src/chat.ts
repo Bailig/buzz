@@ -35,7 +35,14 @@ export class Chat {
     return this.channels.get(channelId)!;
   }
 
-  handleJoinChannel(userId: number, channelId: number) {
+  handleJoinChannel({
+    userId,
+    channelId,
+    totalMemberCount,
+    totalChannelCount,
+    onJoinChannelSuccess,
+    onAllMembersJoinedAllChannels,
+  }: HandleJoinChannelInput) {
     const user = this.users.get(userId);
     if (!user) {
       throw new Error("User not found");
@@ -43,15 +50,28 @@ export class Chat {
     const channel = this.getOrCreateChannel(channelId);
     channel.addMember(user);
     user.joinChannel(channelId);
+    onJoinChannelSuccess();
+
+    // this logic is purely for testing purpose
+    if (
+      this.users.size === totalMemberCount &&
+      [...this.users.values()].every(
+        (user) => user.getChannelIds().size === totalChannelCount
+      )
+    ) {
+      for (const [, member] of this.users) {
+        onAllMembersJoinedAllChannels(member.id);
+      }
+    }
   }
 
-  handleSendMessage(
-    userId: number,
-    channelId: number,
-    message: string,
-    sentAt: string,
-    sendMessage: (receiverId: number, message: Message) => void
-  ) {
+  handleSendMessage({
+    userId,
+    channelId,
+    message,
+    sentAt,
+    onSendMessage,
+  }: HandleSendMessageInput) {
     const user = this.users.get(userId);
     if (!user) {
       throw new Error("User not found");
@@ -68,7 +88,7 @@ export class Chat {
     });
     channel.saveMessage(messageObj);
     for (const member of channel.getMembers()) {
-      sendMessage(member.id, messageObj);
+      onSendMessage(member.id, messageObj);
     }
   }
 
@@ -85,6 +105,23 @@ export class Chat {
     user.leaveChannel(channelId);
   }
 }
+
+type HandleJoinChannelInput = {
+  userId: number;
+  channelId: number;
+  totalMemberCount: number;
+  totalChannelCount: number;
+  onJoinChannelSuccess: () => void;
+  onAllMembersJoinedAllChannels: (recieverId: number) => void;
+};
+
+type HandleSendMessageInput = {
+  userId: number;
+  channelId: number;
+  message: string;
+  sentAt: string;
+  onSendMessage: (receiverId: number, message: Message) => void;
+};
 
 export class User {
   private static idCounter = 0;
