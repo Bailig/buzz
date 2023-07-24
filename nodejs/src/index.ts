@@ -25,8 +25,6 @@ server.get("/chat", { websocket: true }, async (connection) => {
         chat.handleJoinChannel({
           userId: user.id,
           channelId: payload.channelId,
-          totalMemberCount: payload.totalMemberCount,
-          totalChannelCount: payload.totalChannelCount,
           onJoinChannelSuccess: () =>
             connection.socket.send(
               JSON.stringify({
@@ -37,18 +35,6 @@ server.get("/chat", { websocket: true }, async (connection) => {
                 },
               } satisfies OutputMessage)
             ),
-          onAllMembersJoinedAllChannels: (recieverId) => {
-            const socket = userSockets.get(recieverId);
-            if (!socket) {
-              throw new Error("User not found");
-            }
-            socket.send(
-              JSON.stringify({
-                type: "everybodyJoinedAllChannels",
-                payload: undefined,
-              } satisfies OutputMessage)
-            );
-          },
         });
       } else if (type === "sendMessage") {
         chat.handleSendMessage({

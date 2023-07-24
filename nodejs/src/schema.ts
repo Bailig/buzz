@@ -7,8 +7,6 @@ export type InputMessage = { payload: SharedPayload } & (
       type: "joinChannel";
       payload: {
         channelId: number;
-        totalMemberCount: number;
-        totalChannelCount: number;
       };
     }
   | {
@@ -35,10 +33,6 @@ export type OutputMessage =
         userId: number;
         channelId: number;
       };
-    }
-  | {
-      type: "everybodyJoinedAllChannels";
-      payload: undefined;
     }
   | {
       type: "message";

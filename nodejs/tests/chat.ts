@@ -5,15 +5,13 @@ import fs from "node:fs";
 // create and join 20 channels
 const CHANNEL_COUNT = 20;
 
-function joinAllChannels(socket: WebSocket, totalMemberCount: number) {
+function joinAllChannels(socket: WebSocket) {
   for (let channelId = 0; channelId < CHANNEL_COUNT; channelId++) {
     const joinData: Extract<InputMessage, { type: "joinChannel" }> = {
       type: "joinChannel",
       payload: {
         channelId,
         sentAt: process.hrtime.bigint().toString(),
-        totalMemberCount,
-        totalChannelCount: CHANNEL_COUNT,
       },
     };
     socket.send(JSON.stringify(joinData));
@@ -62,16 +60,15 @@ class DiffSaver {
 }
 
 const diffSaver = new DiffSaver();
-let totalJoinedClientCount = 0;
-function connect(url: string, clientCount: number) {
+function connect(url: string, onJoinedAllChannels: () => void) {
   const socket = new WebSocket(url);
 
   socket.on("open", () => {
-    joinAllChannels(socket, clientCount);
+    joinAllChannels(socket);
   });
 
   let myId: number | undefined = undefined;
-  let startedSending = false;
+  let joinedChannelCount = 0;
   socket.on("message", (message) => {
     const { type, payload }: OutputMessage = JSON.parse(message.toString());
     if (type === "error") {
@@ -83,27 +80,14 @@ function connect(url: string, clientCount: number) {
         throw new Error("My ID changed. is a bug.");
       }
       myId = payload.userId;
-      return;
-    }
+      joinedChannelCount++;
 
-    if (type === "everybodyJoinedAllChannels") {
-      if (startedSending) {
-        throw new Error("Received everybodyJoinedAllChannels twice.");
+      if (joinedChannelCount > CHANNEL_COUNT) {
+        throw new Error("Joined too much channel. It's impossible");
       }
-      startedSending = true;
-      totalJoinedClientCount++;
-
-      // wait for everybody else to receive this message, and then start sending messages
-      setTimeout(() => {
-        if (totalJoinedClientCount !== clientCount) {
-          throw new Error(
-            `Expected ${clientCount} clients to join, but only ${totalJoinedClientCount} joined.`
-          );
-        }
-        for (let i = 0; i < 10; i++) {
-          sendMessageToAllChannels(socket);
-        }
-      }, 1000);
+      if (joinedChannelCount === CHANNEL_COUNT) {
+        onJoinedAllChannels();
+      }
       return;
     }
 
@@ -126,6 +110,8 @@ function connect(url: string, clientCount: number) {
       }
     }
   });
+
+  return socket;
 }
 
 function run() {
@@ -138,8 +124,32 @@ function run() {
     throw new Error(`Invalid client count: ${clientCount}`);
   }
 
+  let totalJoinedClientCount = 0;
+  let startedSending = false;
+  const sockets = new Array(_clientCount);
+
   for (let i = 0; i < _clientCount; i++) {
-    connect(url, _clientCount);
+    const socket = connect(url, () => {
+      totalJoinedClientCount++;
+
+      if (totalJoinedClientCount > _clientCount) {
+        throw new Error("More client joined than created? It's impossible");
+      }
+      if (totalJoinedClientCount === _clientCount) {
+        if (startedSending) {
+          throw new Error(
+            "You can only start sending messages once. This should not happen."
+          );
+        }
+        startedSending = true;
+        for (const _socket of sockets) {
+          for (let i = 0; i < 10; i++) {
+            sendMessageToAllChannels(_socket);
+          }
+        }
+      }
+    });
+    sockets[i] = socket;
   }
 }
 

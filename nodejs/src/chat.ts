@@ -38,10 +38,7 @@ export class Chat {
   handleJoinChannel({
     userId,
     channelId,
-    totalMemberCount,
-    totalChannelCount,
     onJoinChannelSuccess,
-    onAllMembersJoinedAllChannels,
   }: HandleJoinChannelInput) {
     const user = this.users.get(userId);
     if (!user) {
@@ -51,18 +48,6 @@ export class Chat {
     channel.addMember(user);
     user.joinChannel(channelId);
     onJoinChannelSuccess();
-
-    // this logic is purely for testing purpose
-    if (
-      this.users.size === totalMemberCount &&
-      [...this.users.values()].every(
-        (user) => user.getChannelIds().size === totalChannelCount
-      )
-    ) {
-      for (const [, member] of this.users) {
-        onAllMembersJoinedAllChannels(member.id);
-      }
-    }
   }
 
   handleSendMessage({
@@ -109,10 +94,7 @@ export class Chat {
 type HandleJoinChannelInput = {
   userId: number;
   channelId: number;
-  totalMemberCount: number;
-  totalChannelCount: number;
   onJoinChannelSuccess: () => void;
-  onAllMembersJoinedAllChannels: (recieverId: number) => void;
 };
 
 type HandleSendMessageInput = {
