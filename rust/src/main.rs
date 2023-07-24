@@ -8,7 +8,7 @@ use std::{
     env,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, sync::mpsc};
 use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 const CHANNEL_COUNT: u32 = 20;
@@ -59,11 +59,15 @@ async fn read_messages(user_id: u32, mut read: SplitStreamRead) {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_micros();
-                    let diff = now - payload.sent_at as u128;
+                    let diff = now
+                        - payload
+                            .sent_at
+                            .parse::<u128>()
+                            .expect("sent_at must be a stirng of numbers.");
                     println!("TIME,{}", diff);
                 }
             }
-            OutputMessage::JoinChannelSuccess { payload } => {
+            OutputMessage::JoinChannelSuccess { payload: _ } => {
                 panic!("This should never happen because we only start sending messages when everybody is joinded.");
             }
         }
@@ -115,6 +119,8 @@ async fn connect(url: &str) -> (u32, SplitStreamWrite, SplitStreamRead) {
 }
 
 async fn send_message_to_all_channels(user_id: u32, mut write: SplitStreamWrite) {
+    let (tx, mut rx) = mpsc::channel(CHANNEL_COUNT as usize);
+
     for channel_id in 0..CHANNEL_COUNT {
         let message = InputMessage::SendMessage {
             payload: SendMessagePayload {
@@ -123,12 +129,20 @@ async fn send_message_to_all_channels(user_id: u32, mut write: SplitStreamWrite)
                 sent_at: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
-                    .as_micros(),
+                    .as_micros()
+                    .to_string(),
                 user_id,
             },
         };
         let message_string = serde_json::to_string(&message).unwrap();
-        let message = Message::Text(message_string);
+        let _tx = tx.clone();
+        tokio::spawn(async move {
+            let message = Message::Text(message_string);
+            _tx.send(message).await.unwrap();
+        });
+    }
+
+    while let Some(message) = rx.recv().await {
         write.send(message).await.expect("Failed to send message.");
     }
 }
@@ -137,14 +151,14 @@ async fn join_all_channels(
     write: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
 ) {
     for channel_id in 0..CHANNEL_COUNT {
-        println!("Joining channel {}", channel_id);
         let message = InputMessage::JoinChannel {
             payload: JoinMessagePayload {
                 channel_id,
                 sent_at: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
-                    .as_micros(),
+                    .as_micros()
+                    .to_string(),
                 total_channel_count: CHANNEL_COUNT,
             },
         };
@@ -163,7 +177,7 @@ struct JoinMessagePayload {
     #[serde(rename = "totalChannelCount")]
     total_channel_count: u32,
     #[serde(rename = "sentAt")]
-    sent_at: u128,
+    sent_at: String,
 }
 
 #[derive(Serialize)]
@@ -175,7 +189,7 @@ struct SendMessagePayload {
     #[serde(rename = "userId")]
     user_id: u32,
     #[serde(rename = "sentAt")]
-    sent_at: u128,
+    sent_at: String,
 }
 
 #[derive(Serialize)]
@@ -185,7 +199,7 @@ struct LeaveMessagePayload {
     #[serde(rename = "userId")]
     user_id: Option<u32>,
     #[serde(rename = "sentAt")]
-    sent_at: u128,
+    sent_at: String,
 }
 
 #[derive(Serialize)]
@@ -199,7 +213,8 @@ enum InputMessage {
     LeaveChannel { payload: LeaveMessagePayload },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
 enum OutputMessage {
     #[serde(rename = "joinChannelSuccess")]
     JoinChannelSuccess { payload: JoinChannelSuccessPayload },
@@ -209,7 +224,7 @@ enum OutputMessage {
     Message { payload: MessagePayload },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct MessagePayload {
     #[serde(rename = "id")]
     id: u32,
@@ -220,10 +235,10 @@ struct MessagePayload {
     #[serde(rename = "content")]
     content: String,
     #[serde(rename = "sentAt")]
-    sent_at: u128,
+    sent_at: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct JoinChannelSuccessPayload {
     #[serde(rename = "channelId")]
     channel_id: u32,
